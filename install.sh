@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Omni Line self-host installer — https://github.com/omni-line/releases
 # Usage:
-#   curl -fsSL https://github.com/omni-line/releases/releases/latest/download/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh | bash -s -- --version 0.1.3 -y
 #   ./install.sh --dir ./omni-line --yes
 set -euo pipefail
 
 OMNI_INSTALL_VERSION="1.0.0"
+# Always fetch this script from main; --version only pins GHCR image / compose release assets.
+INSTALL_SCRIPT_URL="${OMNI_LINE_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/omni-line/releases/main/install.sh}"
 RELEASE_BASE="${OMNI_LINE_RELEASE_BASE:-https://github.com/omni-line/releases/releases}"
 DOCS_URL="https://github.com/omni-line/releases#install"
 DOCKER_INSTALL_URL="https://docs.docker.com/engine/install/"
@@ -92,12 +95,13 @@ usage() {
 ${C_BOLD}Omni Line installer${C_RESET} (v${OMNI_INSTALL_VERSION})
 
 ${C_BOLD}Usage:${C_RESET}
-  curl -fsSL ${RELEASE_BASE}/latest/download/install.sh | bash
+  curl -fsSL ${INSTALL_SCRIPT_URL} | bash
+  curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- --version x.y.z
   bash install.sh [options]
 
 ${C_BOLD}Options:${C_RESET}
   --dir <path>         Install directory (default: ${DEFAULT_DIR})
-  --version <x.y.z>    Pin release / image tag (default: latest)
+  --version <x.y.z>    Pin GHCR image / compose assets (default: latest)
   --port <n>           Host port (default: ${DEFAULT_PORT})
   --no-start           Download + write config only
   --yes, -y            Non-interactive (defaults, no prompts)

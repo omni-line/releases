@@ -4,20 +4,13 @@ Public install assets for self-hosting Omni Line. Application source stays in th
 
 ## Install (one-liner)
 
-Prefer the installer from `main` (includes volume wipe on fresh secrets). Image tags still come from GHCR / `--version`:
+Always pull **`install.sh` from `main`** (latest installer). Use `--version` only to pin GHCR images / compose assets:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh \
-  | bash -s -- --version 0.1.3
+curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh | bash
 ```
 
-Pinned release asset (may lag fixes until the next Publish images run):
-
-```bash
-curl -fsSL https://github.com/omni-line/releases/releases/latest/download/install.sh | bash
-```
-
-Pin a version:
+Pin images (non-interactive):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh \
@@ -28,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh 
 
 | Path | Purpose |
 |---|---|
-| `install.sh` | Colored installer (preflight, prompts, Compose up) |
+| `install.sh` | Colored installer (preflight, prompts, Compose up) — use from `main` |
 | `compose/docker-compose.yml` | Official stack: Postgres + server + client |
 | `compose/compose.env.example` | Env template (`OMNI_LINE_VERSION`, secrets, URLs) |
 
@@ -59,4 +52,4 @@ Open `http://localhost:8080`, sign in with the bootstrap admin, and activate you
 
 ## Maintainer note
 
-Assets are published from the private monorepo via the **Publish images** workflow into **this** repository’s GitHub Releases. Do not commit application source here.
+`install.sh` on `main` is the customer one-liner source of truth. GitHub Release assets (compose files + a snapshot of `install.sh`) are still published by the monorepo **Publish images** workflow for version-pinned compose downloads. Do not commit application source here.
