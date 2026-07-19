@@ -1,0 +1,97 @@
+# Omni Line — official customer Compose stack
+# Docs: https://github.com/omni-line/releases
+#
+# Pin a release with OMNI_LINE_VERSION (never use floating tags in production).
+
+name: omni-line
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omniline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-omniline}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-omniline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Not published to the host by default (production-safe).
+
+  server:
+    image: ghcr.io/omni-line/omni-line-server:${OMNI_LINE_VERSION:?OMNI_LINE_VERSION is required}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-omniline}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-omniline}
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      SERVER_URL: ${SERVER_URL:-http://localhost:8080}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-fs}
+      STORAGE_PATH: /data/storage
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_PREFIX: ${S3_PREFIX:-}
+      RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
+      RUN_BOOTSTRAP_ON_START: ${RUN_BOOTSTRAP_ON_START:-true}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@omni-line.local}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-changeme123}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Admin}
+      BOOTSTRAP_ORG_NAME: ${BOOTSTRAP_ORG_NAME:-Default Organization}
+      BOOTSTRAP_ORG_SLUG: ${BOOTSTRAP_ORG_SLUG:-default}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-Omni Line <no-reply@omni-line.local>}
+      # Optional override of the public key baked into the server image:
+      LICENSE_PUBLIC_KEY: ${LICENSE_PUBLIC_KEY:-}
+    volumes:
+      - storage_data:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-fsS",
+          "http://127.0.0.1:3000/readyz",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  client:
+    image: ghcr.io/omni-line/omni-line-client:${OMNI_LINE_VERSION:?OMNI_LINE_VERSION is required}
+    restart: unless-stopped
+    environment:
+      OMNI_LINE_API_URL: /api
+    ports:
+      - "${OMNI_LINE_PORT:-8080}:8080"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  storage_data:

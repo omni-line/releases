@@ -1,0 +1,3 @@
+# Ignore local operator state if someone runs compose from a clone
+.env
+omni-line/
