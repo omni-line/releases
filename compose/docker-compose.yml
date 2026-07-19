@@ -2,8 +2,8 @@
 # Docs: https://github.com/omni-line/releases
 #
 # Pin a release with OMNI_LINE_VERSION (never use floating tags in production).
-
-name: omni-line
+# Project name comes from COMPOSE_PROJECT_NAME in .env (set by install.sh) or the
+# directory name — do not hardcode, or installs in different dirs share one DB volume.
 
 services:
   postgres:
