@@ -175,16 +175,41 @@ free_disk_gib() {
   df -Pk "$path" 2>/dev/null | awk 'NR==2 {printf "%.0f", $4/1024/1024}'
 }
 
-resolve_latest_version() {
-  local tag
+# Parse "tag_name":"…" from GitHub Releases JSON (no jq required).
+_parse_tag_name() {
+  # Prefer the first tag_name in the payload (object or array).
+  printf '%s' "$1" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"[[:space:]]*$/\1/'
+}
+
+_fetch_url() {
   if have_cmd curl; then
-    tag="$(curl -fsSL -o /dev/null -w '%{url_effective}' "${RELEASE_BASE}/latest" | sed 's#.*/##')"
+    curl -fsSL -H "Accept: application/vnd.github+json" "$1"
   else
-    tag="$(wget -qSO- "${RELEASE_BASE}/latest" 2>&1 | awk '/Location:|location:/ {print $2}' | tr -d '\r' | sed 's#.*/##' | tail -n1)"
+    wget -qO- --header="Accept: application/vnd.github+json" "$1"
   fi
+}
+
+resolve_latest_version() {
+  # Repo is named "releases", so HTML /releases/latest is ambiguous: when there is
+  # no non-prerelease, GitHub redirects to …/releases (the list page). Taking the
+  # last path segment then yielded "releases" → download path …/vreleases/….
+  local api="https://api.github.com/repos/omni-line/releases/releases"
+  local json="" tag=""
+
+  # Stable "latest" first (excludes prereleases).
+  if json="$(_fetch_url "${api}/latest" 2>/dev/null)"; then
+    tag="$(_parse_tag_name "$json")"
+  fi
+
+  # Fall back to newest release including prereleases (workflow_dispatch cuts).
+  if [[ -z "$tag" ]]; then
+    json="$(_fetch_url "${api}?per_page=1")"
+    tag="$(_parse_tag_name "$json")"
+  fi
+
   tag="${tag#v}"
-  if [[ -z "$tag" || "$tag" == "latest" ]]; then
-    die "Could not resolve latest release version from ${RELEASE_BASE}/latest"
+  if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+ ]]; then
+    die "Could not resolve a valid latest version (got '${tag:-empty}'). Pass --version X.Y.Z. See ${DOCS_URL}"
   fi
   printf '%s' "$tag"
 }
@@ -372,7 +397,7 @@ INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd)"
 ok "install dir ${INSTALL_DIR}"
 
 next_step "Downloading release assets"
-ASSET_TAG="v${VERSION_ARG}"
+ASSET_TAG="v${VERSION_ARG#v}"
 # Prefer release assets; fall back to raw repo paths for unreleased / local testing.
 COMPOSER_URL="${RELEASE_BASE}/download/${ASSET_TAG}/docker-compose.yml"
 ENV_URL="${RELEASE_BASE}/download/${ASSET_TAG}/compose.env.example"
