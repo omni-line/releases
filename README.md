@@ -4,6 +4,15 @@ Public install assets for self-hosting Omni Line. Application source stays in th
 
 ## Install (one-liner)
 
+Prefer the installer from `main` (includes volume wipe on fresh secrets). Image tags still come from GHCR / `--version`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh \
+  | bash -s -- --version 0.1.3
+```
+
+Pinned release asset (may lag fixes until the next Publish images run):
+
 ```bash
 curl -fsSL https://github.com/omni-line/releases/releases/latest/download/install.sh | bash
 ```
@@ -11,8 +20,8 @@ curl -fsSL https://github.com/omni-line/releases/releases/latest/download/instal
 Pin a version:
 
 ```bash
-curl -fsSL https://github.com/omni-line/releases/releases/download/v0.1.1/install.sh \
-  | bash -s -- --version 0.1.1 -y
+curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh \
+  | bash -s -- --version 0.1.3 -y
 ```
 
 ## What this repository contains

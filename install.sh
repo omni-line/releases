@@ -417,7 +417,11 @@ download_or_fallback() {
   return 1
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+SCRIPT_DIR=""
+# BASH_SOURCE is unset when piped to bash (`curl … | bash`); keep set -u safe.
+if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+fi
 LOCAL_COMPOSE="${SCRIPT_DIR:+$SCRIPT_DIR/compose/docker-compose.yml}"
 LOCAL_ENV="${SCRIPT_DIR:+$SCRIPT_DIR/compose/compose.env.example}"
 
