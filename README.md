@@ -10,20 +10,40 @@ Always pull **`install.sh` from `main`** (latest installer). Use `--version` onl
 curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh | bash
 ```
 
-Pin images (non-interactive):
+Pin images (non-interactive). On a VPS, pass `--url` so CORS and registry clients use your public origin (not localhost):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh \
-  | bash -s -- --version 0.1.3 -y
+  | bash -s -- --version 0.1.3 -y --url http://YOUR_IP_OR_HOSTNAME:8080
 ```
+
+Fresh Ubuntu/Debian hosts need Docker Engine 25+ with Compose V2 before the installer will pass preflight: https://docs.docker.com/engine/install/ubuntu/
+
+## Ansible
+
+Install the public Galaxy collection from a Release asset, then run the playbook:
+
+```bash
+ansible-galaxy collection install \
+  https://github.com/omni-line/releases/releases/download/v0.1.3/omni_line-deploy-0.1.3.tar.gz
+
+ansible-playbook omni_line.deploy.install -i inventory.yml \
+  -e omni_line_version=0.1.3 \
+  -e omni_line_server_url=https://registry.example.com \
+  -e omni_line_frontend_url=https://registry.example.com
+```
+
+Each Release also attaches `omni_line-deploy.tar.gz` (same build, stable filename). Docs: https://omniline.app/docs/install/ansible
 
 ## What this repository contains
 
-| Path | Purpose |
+| Path / asset | Purpose |
 |---|---|
-| `install.sh` | Colored installer (preflight, prompts, Compose up) — use from `main` |
+| `install.sh` (on `main`) | Colored installer (preflight, prompts, Compose up) — use from `main` |
 | `compose/docker-compose.yml` | Official stack: Postgres + server + client |
 | `compose/compose.env.example` | Env template (`OMNI_LINE_VERSION`, secrets, URLs) |
+| Release: `omni_line-deploy-<version>.tar.gz` | Ansible Galaxy collection `omni_line.deploy` |
+| Release: `omni_line-deploy.tar.gz` | Same collection under a stable filename |
 
 Images pulled by Compose:
 
