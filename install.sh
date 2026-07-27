@@ -14,6 +14,7 @@ DOCS_URL="https://github.com/omni-line/releases#install"
 DOCKER_INSTALL_URL="https://docs.docker.com/engine/install/"
 MIN_DOCKER_MAJOR=25
 MIN_DISK_GIB=5
+MIN_RAM_MIB=1800
 DEFAULT_PORT=8080
 DEFAULT_DIR="./omni-line"
 DEFAULT_ADMIN_EMAIL="admin@omni-line.local"
@@ -103,11 +104,13 @@ ${C_BOLD}Options:${C_RESET}
   --dir <path>         Install directory (default: ${DEFAULT_DIR})
   --version <x.y.z>    Pin GHCR image / compose assets (default: latest)
   --port <n>           Host port (default: ${DEFAULT_PORT})
+  --url <origin>       Public origin for SERVER_URL / FRONTEND_URL
+                       (default: http://localhost:<port>; required on a VPS with -y)
   --no-start           Download + write config only
   --yes, -y            Non-interactive (defaults, no prompts)
   --reset-env          Regenerate .env and wipe Compose volumes (destructive)
   --check              Run dependency checks only
-  --force              Continue despite port/disk warnings
+  --force              Continue despite port/disk/RAM warnings
   -h, --help           Show this help
 
 ${C_BOLD}Docs:${C_RESET} ${DOCS_URL}
@@ -118,6 +121,7 @@ EOF
 INSTALL_DIR=""
 VERSION_ARG=""
 PORT_ARG=""
+URL_ARG=""
 YES=0
 NO_START=0
 RESET_ENV=0
@@ -129,6 +133,7 @@ while [[ $# -gt 0 ]]; do
     --dir) INSTALL_DIR="${2:-}"; shift 2 ;;
     --version) VERSION_ARG="${2:-}"; shift 2 ;;
     --port) PORT_ARG="${2:-}"; shift 2 ;;
+    --url) URL_ARG="${2:-}"; shift 2 ;;
     --no-start) NO_START=1; shift ;;
     --yes|-y) YES=1; shift ;;
     --reset-env) RESET_ENV=1; shift ;;
@@ -261,7 +266,9 @@ run_preflight() {
 
   if ! have_cmd docker; then
     error "Docker is not installed"
-    error "Install Docker Engine: ${DOCKER_INSTALL_URL}"
+    error "Install Docker Engine 25+ with Compose V2, then re-run this installer."
+    error "Official guide: ${DOCKER_INSTALL_URL}"
+    error "Ubuntu/Debian quick path: https://docs.docker.com/engine/install/ubuntu/"
     failed=1
   else
     ok "docker $(docker --version 2>/dev/null | head -n1)"
@@ -288,6 +295,15 @@ run_preflight() {
       failed=1
     elif [[ -n "$docker_ver" ]]; then
       ok "docker engine ${docker_ver}"
+    fi
+  fi
+
+  # Soft RAM check (Compose wants ~4 GiB; warn under ~1.8 GiB available)
+  if have_cmd free; then
+    local mem_mib
+    mem_mib="$(free -m 2>/dev/null | awk '/^Mem:/ {print $2}')"
+    if [[ -n "$mem_mib" && "$mem_mib" =~ ^[0-9]+$ && "$mem_mib" -lt $MIN_RAM_MIB ]]; then
+      warn "Host RAM ~${mem_mib} MiB (recommended >= 4 GiB / ~4096 MiB). Expect OOM risk; add swap or use a larger VM."
     fi
   fi
 
@@ -340,7 +356,7 @@ next_step "Gathering install options"
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
 VERSION_ARG="${VERSION_ARG:-latest}"
 PORT_ARG="${PORT_ARG:-$DEFAULT_PORT}"
-PUBLIC_URL="http://localhost:${PORT_ARG}"
+PUBLIC_URL="${URL_ARG:-http://localhost:${PORT_ARG}}"
 ADMIN_EMAIL="$DEFAULT_ADMIN_EMAIL"
 ADMIN_PASSWORD=""
 CONFIGURE_SMTP=0
@@ -356,7 +372,7 @@ if (( ! YES )); then
   INSTALL_DIR="$(ask "Install directory" "$INSTALL_DIR")"
   VERSION_ARG="$(ask "Version to install (semver or latest)" "$VERSION_ARG")"
   PORT_ARG="$(ask "Host port" "$PORT_ARG")"
-  PUBLIC_URL="$(ask "Public URL (browser)" "http://localhost:${PORT_ARG}")"
+  PUBLIC_URL="$(ask "Public URL (browser / CORS / clients)" "${URL_ARG:-http://localhost:${PORT_ARG}}")"
   ADMIN_EMAIL="$(ask "Bootstrap admin email" "$ADMIN_EMAIL")"
   if ask_yn "Set a custom bootstrap admin password?" "n"; then
     ADMIN_PASSWORD="$(ask "Bootstrap admin password" "")"
@@ -378,6 +394,17 @@ if (( ! YES )); then
       START_STACK=0
     fi
   fi
+else
+  if [[ -z "$URL_ARG" ]]; then
+    warn "Non-interactive install defaults PUBLIC_URL to ${PUBLIC_URL}"
+    warn "On a VPS or remote host, pass --url http://YOUR_IP_OR_HOSTNAME:${PORT_ARG} (or https://… behind TLS)"
+  fi
+fi
+
+# Strip trailing slash from public origin
+PUBLIC_URL="${PUBLIC_URL%/}"
+if [[ ! "$PUBLIC_URL" =~ ^https?:// ]]; then
+  die "Public URL must start with http:// or https:// (got: ${PUBLIC_URL})"
 fi
 
 [[ -n "$ADMIN_PASSWORD" ]] || ADMIN_PASSWORD="$(rand_password)"
@@ -405,6 +432,8 @@ ASSET_TAG="v${VERSION_ARG#v}"
 # Prefer release assets; fall back to raw repo paths for unreleased / local testing.
 COMPOSER_URL="${RELEASE_BASE}/download/${ASSET_TAG}/docker-compose.yml"
 ENV_URL="${RELEASE_BASE}/download/${ASSET_TAG}/compose.env.example"
+SUMS_URL="${RELEASE_BASE}/download/${ASSET_TAG}/SHA256SUMS"
+DIGESTS_URL="${RELEASE_BASE}/download/${ASSET_TAG}/image-digests.env"
 
 download_or_fallback() {
   local url="$1"
@@ -421,6 +450,28 @@ download_or_fallback() {
   return 1
 }
 
+verify_sha256() {
+  local sums_file="$1"
+  local file="$2"
+  local expected actual
+  expected="$(grep -E "[[:space:]]${file}$" "$sums_file" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+  if [[ -z "$expected" ]]; then
+    return 0
+  fi
+  if have_cmd sha256sum; then
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  elif have_cmd shasum; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    warn "sha256sum/shasum not found; skipping checksum for ${file}"
+    return 0
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    die "Checksum mismatch for ${file} (expected ${expected}, got ${actual})"
+  fi
+  ok "checksum ${file}"
+}
+
 SCRIPT_DIR=""
 # BASH_SOURCE is unset when piped to bash (`curl … | bash`); keep set -u safe.
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
@@ -428,11 +479,42 @@ if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
 fi
 LOCAL_COMPOSE="${SCRIPT_DIR:+$SCRIPT_DIR/compose/docker-compose.yml}"
 LOCAL_ENV="${SCRIPT_DIR:+$SCRIPT_DIR/compose/compose.env.example}"
+LOCAL_DIGESTS="${SCRIPT_DIR:+$SCRIPT_DIR/compose/image-digests.env}"
 
 if ! download_or_fallback "$COMPOSER_URL" "${INSTALL_DIR}/docker-compose.yml" "${LOCAL_COMPOSE:-}"; then
   die "Could not download docker-compose.yml from ${COMPOSER_URL}"
 fi
 ok "docker-compose.yml"
+
+# Optional integrity + digest assets (absent on older releases / local fallbacks).
+if download "$SUMS_URL" "${INSTALL_DIR}/SHA256SUMS" 2>/dev/null; then
+  ok "SHA256SUMS"
+  (
+    cd "$INSTALL_DIR"
+    verify_sha256 SHA256SUMS docker-compose.yml
+  )
+else
+  warn "SHA256SUMS not available for ${ASSET_TAG} (skipping verification)"
+fi
+
+SERVER_IMAGE_REF="ghcr.io/omni-line/omni-line-server:${VERSION_ARG}"
+CLIENT_IMAGE_REF="ghcr.io/omni-line/omni-line-client:${VERSION_ARG}"
+if download_or_fallback "$DIGESTS_URL" "${INSTALL_DIR}/image-digests.env" "${LOCAL_DIGESTS:-}"; then
+  # shellcheck disable=SC1091
+  source "${INSTALL_DIR}/image-digests.env"
+  SERVER_IMAGE_REF="${OMNI_LINE_SERVER_IMAGE:-$SERVER_IMAGE_REF}"
+  CLIENT_IMAGE_REF="${OMNI_LINE_CLIENT_IMAGE:-$CLIENT_IMAGE_REF}"
+  ok "image digests (pinned)"
+fi
+
+if download_or_fallback "$ENV_URL" "${INSTALL_DIR}/compose.env.example" "${LOCAL_ENV:-}"; then
+  if [[ -f "${INSTALL_DIR}/SHA256SUMS" ]]; then
+    (
+      cd "$INSTALL_DIR"
+      verify_sha256 SHA256SUMS compose.env.example || true
+    )
+  fi
+fi
 
 ENV_PATH="${INSTALL_DIR}/.env"
 WROTE_ENV=0
@@ -458,6 +540,8 @@ else
   cat >"$ENV_PATH" <<EOF
 # Generated by Omni Line install.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ)
 OMNI_LINE_VERSION=${VERSION_ARG}
+OMNI_LINE_SERVER_IMAGE=${SERVER_IMAGE_REF}
+OMNI_LINE_CLIENT_IMAGE=${CLIENT_IMAGE_REF}
 OMNI_LINE_PORT=${PORT_ARG}
 COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}
 SERVER_URL=${PUBLIC_URL}
@@ -492,11 +576,21 @@ EOF
   ok "wrote .env (JWT_SECRET and POSTGRES_PASSWORD generated)"
 fi
 
-# Ensure OMNI_LINE_VERSION is current when upgrading without --reset-env
-if grep -q '^OMNI_LINE_VERSION=' "$ENV_PATH"; then
-  # portable in-place-ish update
+# Ensure version + image refs are current when upgrading without --reset-env
+if [[ -f "$ENV_PATH" ]]; then
   tmp="$(mktemp)"
-  sed "s/^OMNI_LINE_VERSION=.*/OMNI_LINE_VERSION=${VERSION_ARG}/" "$ENV_PATH" >"$tmp"
+  sed \
+    -e "s|^OMNI_LINE_VERSION=.*|OMNI_LINE_VERSION=${VERSION_ARG}|" \
+    -e "s|^OMNI_LINE_SERVER_IMAGE=.*|OMNI_LINE_SERVER_IMAGE=${SERVER_IMAGE_REF}|" \
+    -e "s|^OMNI_LINE_CLIENT_IMAGE=.*|OMNI_LINE_CLIENT_IMAGE=${CLIENT_IMAGE_REF}|" \
+    "$ENV_PATH" >"$tmp"
+  # Add image keys if an older .env lacks them
+  if ! grep -q '^OMNI_LINE_SERVER_IMAGE=' "$tmp"; then
+    printf 'OMNI_LINE_SERVER_IMAGE=%s\n' "$SERVER_IMAGE_REF" >>"$tmp"
+  fi
+  if ! grep -q '^OMNI_LINE_CLIENT_IMAGE=' "$tmp"; then
+    printf 'OMNI_LINE_CLIENT_IMAGE=%s\n' "$CLIENT_IMAGE_REF" >>"$tmp"
+  fi
   mv "$tmp" "$ENV_PATH"
   chmod 600 "$ENV_PATH"
 fi
@@ -575,7 +669,9 @@ printf '  Install dir:  %s\n' "${INSTALL_DIR}"
 printf '  Version:      %s\n' "${VERSION_ARG}"
 printf '\n'
 printf '  1. Open the UI and sign in\n'
-printf '  2. Activate your vendor-issued %sOMNI-…%s license key\n' "${C_BOLD}" "${C_RESET}"
+printf '  2. Activate your vendor-issued license key (Settings → License)\n'
+printf '     If activation returns LICENSE_INVALID, the key was not signed for this\n'
+printf '     deployment — use a portal-issued key (do not set LICENSE_PUBLIC_KEY).\n'
 printf '\n'
 
 printf '%sAdjust if needed%s (edit %s/.env then: docker compose up -d)\n' "${C_BOLD}" "${C_RESET}" "${INSTALL_DIR}"
@@ -586,7 +682,7 @@ fi
 printf '  • Rotate secrets → JWT_SECRET, POSTGRES_PASSWORD (DB password needs care with existing volume)\n'
 printf '  • Production storage → STORAGE_DRIVER=s3 and S3_* (see docs)\n'
 printf '  • External Postgres → set DATABASE_URL pattern via compose overlay (see docs)\n'
-printf '  • SSO / OIDC → configure in Settings or env (see docs/sso.md)\n'
+printf '  • SSO / OIDC → configure in Settings or env (see docs/auth/SSO.md)\n'
 printf '  • Upgrade → re-run this installer with --version x.y.z\n'
 printf '  • Logs / health → cd %s && docker compose logs -f ; curl -fsS http://127.0.0.1:%s/readyz\n' "${INSTALL_DIR}" "${PORT_ARG}"
 printf '\n'
