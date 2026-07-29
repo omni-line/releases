@@ -19,6 +19,22 @@ curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh 
 
 Fresh Ubuntu/Debian hosts need Docker Engine 25+ with Compose V2 before the installer will pass preflight: https://docs.docker.com/engine/install/ubuntu/
 
+On a fresh cloud VM, prefer the cloud bootstrap (installs Docker, then `install.sh`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/cloud/cloud-init.sh | bash
+```
+
+## Cloud (AWS / Azure / DigitalOcean)
+
+Single-VM templates that wrap the Compose installer — see [`cloud/README.md`](cloud/README.md) and https://omniline.app/docs/install/cloud
+
+| Cloud | Start here |
+|---|---|
+| AWS | [Launch Stack](https://console.aws.amazon.com/cloudformation/home#/stacks/CreateStack?stackName=omni-line&templateURL=https://raw.githubusercontent.com/omni-line/releases/main/cloud/aws/cloudformation.yml) · [`cloud/aws/cloudformation.yml`](cloud/aws/cloudformation.yml) |
+| Azure | [`cloud/azure/main.bicep`](cloud/azure/main.bicep) + `az deployment group create` |
+| DigitalOcean | [`cloud/digitalocean/user-data.yaml`](cloud/digitalocean/user-data.yaml) · [droplet.md](cloud/digitalocean/droplet.md) |
+
 ## Ansible
 
 Install the public Galaxy collection from a Release asset, then run the playbook:
@@ -40,10 +56,12 @@ Each Release also attaches `omni_line-deploy.tar.gz` (same build, stable filenam
 | Path / asset | Purpose |
 |---|---|
 | `install.sh` (on `main`) | Colored installer (preflight, prompts, Compose up) — use from `main` |
+| `cloud/` (on `main`) | Cloud-init + AWS CFN / Azure Bicep / DO user-data |
 | `compose/docker-compose.yml` | Official stack: Postgres + server + client |
 | `compose/compose.env.example` | Env template (`OMNI_LINE_VERSION`, secrets, URLs) |
 | Release: `omni_line-deploy-<version>.tar.gz` | Ansible Galaxy collection `omni_line.deploy` |
 | Release: `omni_line-deploy.tar.gz` | Same collection under a stable filename |
+| Release: `cloud.tgz` | Snapshot of `cloud/` for that version |
 
 Images pulled by Compose:
 
@@ -72,4 +90,4 @@ Open `http://localhost:8080`, sign in with the bootstrap admin, and activate you
 
 ## Maintainer note
 
-`install.sh` on `main` is the customer one-liner source of truth. GitHub Release assets (compose files + a snapshot of `install.sh`) are still published by the monorepo **Publish images** workflow for version-pinned compose downloads. Do not commit application source here.
+`install.sh` and `cloud/` on `main` are customer raw-URL sources of truth. The monorepo **Publish images** workflow syncs them to this repo’s `main` and attaches versioned Release assets. Do not commit application source here.

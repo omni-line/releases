@@ -1,0 +1,24 @@
+#cloud-config
+# Omni Line DigitalOcean droplet user-data.
+# Paste into the Droplet create UI (User data) or pass to doctl --user-data-file.
+#
+# Recommended: Ubuntu 24.04, 4 GB RAM / 2 vCPU, open firewall for 22 + 8080.
+#
+# Optional: set OMNI_URL / OMNI_VERSION / OMNI_PORT via write_files env before runcmd,
+# or edit the runcmd exports below.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - curl
+  - ca-certificates
+  - openssl
+
+runcmd:
+  - |
+    export OMNI_DIR=/opt/omni-line
+    export OMNI_PORT=8080
+    # export OMNI_URL=https://registry.example.com
+    # export OMNI_VERSION=0.1.3
+    curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/cloud/cloud-init.sh | bash
