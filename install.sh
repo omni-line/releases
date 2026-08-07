@@ -11,6 +11,8 @@ OMNI_INSTALL_VERSION="1.0.0"
 INSTALL_SCRIPT_URL="${OMNI_LINE_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/omni-line/releases/main/install.sh}"
 RELEASE_BASE="${OMNI_LINE_RELEASE_BASE:-https://github.com/omni-line/releases/releases}"
 DOCS_URL="https://github.com/omni-line/releases#install"
+PORTAL_URL="https://omniline.app"
+PORTAL_LICENSES_URL="${PORTAL_URL}/licenses"
 DOCKER_INSTALL_URL="https://docs.docker.com/engine/install/"
 MIN_DOCKER_MAJOR=25
 MIN_DISK_GIB=5
@@ -553,8 +555,8 @@ POSTGRES_DB=omniline
 BOOTSTRAP_ADMIN_EMAIL=${ADMIN_EMAIL}
 BOOTSTRAP_ADMIN_PASSWORD=${ADMIN_PASSWORD}
 BOOTSTRAP_ADMIN_NAME=Admin
-BOOTSTRAP_ORG_NAME=Default Organization
-BOOTSTRAP_ORG_SLUG=default
+# Do not seed a default org — create your own after signing in.
+BOOTSTRAP_CREATE_ORG=false
 RUN_MIGRATIONS_ON_START=${RUN_MIGRATIONS_ON_START:-true}
 RUN_BOOTSTRAP_ON_START=${RUN_BOOTSTRAP_ON_START:-true}
 STORAGE_DRIVER=fs
@@ -661,17 +663,25 @@ printf '\n%s━━━━━━━━━━━━━━━━━━━━━━�
 printf '%s✔ Omni Line is installed%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "${C_GREEN}" "${C_RESET}"
 
-printf '%sReady now%s\n' "${C_BOLD}" "${C_RESET}"
+printf '%sYour instance%s\n' "${C_BOLD}" "${C_RESET}"
 printf '  UI:           %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
 printf '  Admin email:  %s\n' "${ADMIN_EMAIL}"
 printf '  Admin pass:   %s\n' "${ADMIN_PASSWORD}"
 printf '  Install dir:  %s\n' "${INSTALL_DIR}"
 printf '  Version:      %s\n' "${VERSION_ARG}"
 printf '\n'
-printf '  1. Open the UI and sign in\n'
-printf '  2. Activate your vendor-issued license key (Settings → License)\n'
-printf '     If activation returns LICENSE_INVALID, the key was not signed for this\n'
-printf '     deployment — use a portal-issued key (do not set LICENSE_PUBLIC_KEY).\n'
+
+printf '%sNext steps%s\n' "${C_BOLD}" "${C_RESET}"
+printf '  1. Get your license key from the Omni Line portal:\n'
+printf '       %s\n' "${PORTAL_LICENSES_URL}"
+printf '     Sign in (or create an account), open Licenses, and copy the OMNI-… key.\n'
+printf '     Most of the product stays locked until this key is activated.\n'
+printf '  2. Open your instance UI and sign in with the admin credentials above:\n'
+printf '       %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
+printf '  3. Activate the key (Settings → License, or the license gate).\n'
+printf '     If activation returns LICENSE_INVALID, use a portal-issued key for this\n'
+printf '     deployment — do not set LICENSE_PUBLIC_KEY.\n'
+printf '  4. Create your organization, then registries / PATs as needed.\n'
 printf '\n'
 
 printf '%sAdjust if needed%s (edit %s/.env then: docker compose up -d)\n' "${C_BOLD}" "${C_RESET}" "${INSTALL_DIR}"
@@ -686,4 +696,5 @@ printf '  • SSO / OIDC → configure in Settings or env (see docs/auth/SSO.md)
 printf '  • Upgrade → re-run this installer with --version x.y.z\n'
 printf '  • Logs / health → cd %s && docker compose logs -f ; curl -fsS http://127.0.0.1:%s/readyz\n' "${INSTALL_DIR}" "${PORT_ARG}"
 printf '\n'
-printf '%sDocs:%s %s\n\n' "${C_DIM}" "${C_RESET}" "${DOCS_URL}"
+printf '%sPortal:%s %s\n' "${C_DIM}" "${C_RESET}" "${PORTAL_URL}"
+printf '%sDocs:%s   %s\n\n' "${C_DIM}" "${C_RESET}" "${DOCS_URL}"
