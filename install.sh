@@ -6,7 +6,7 @@
 #   ./install.sh --dir ./omni-line --yes
 set -euo pipefail
 
-OMNI_INSTALL_VERSION="1.0.0"
+OMNI_INSTALL_VERSION="1.1.0"
 # Always fetch this script from main; --version only pins GHCR image / compose release assets.
 INSTALL_SCRIPT_URL="${OMNI_LINE_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/omni-line/releases/main/install.sh}"
 RELEASE_BASE="${OMNI_LINE_RELEASE_BASE:-https://github.com/omni-line/releases/releases}"
@@ -114,6 +114,13 @@ ${C_BOLD}Options:${C_RESET}
   --check              Run dependency checks only
   --force              Continue despite port/disk/RAM warnings
   -h, --help           Show this help
+
+${C_BOLD}Existing installs:${C_RESET}
+  If <dir> already has an Omni Line .env, this script upgrades that instance
+  (compose + images; keeps secrets and volumes). It does not reinstall.
+  Destructive wipe: --reset-env. Manual upgrade without this script:
+    cd <dir> && edit OMNI_LINE_VERSION in .env
+    docker compose --env-file .env pull && docker compose --env-file .env up -d
 
 ${C_BOLD}Docs:${C_RESET} ${DOCS_URL}
 EOF
@@ -317,6 +324,7 @@ run_preflight() {
 check_disk_and_port() {
   local dir="$1"
   local port="$2"
+  local skip_port_check="${3:-0}"
   mkdir -p "$dir"
   local free
   free="$(free_disk_gib "$dir" || echo 0)"
@@ -330,6 +338,11 @@ check_disk_and_port() {
     ok "disk space ~${free:-?} GiB free"
   fi
 
+  if (( skip_port_check )); then
+    ok "port ${port} (existing install — skip free-port check)"
+    return 0
+  fi
+
   if port_in_use "$port"; then
     if (( FORCE )); then
       warn "Port ${port} appears in use — continuing due to --force"
@@ -339,6 +352,33 @@ check_disk_and_port() {
   else
     ok "port ${port} looks free"
   fi
+}
+
+# True when dir looks like an Omni Line Compose install (keeps .env across upgrades).
+is_existing_install() {
+  local dir="$1"
+  local env_file="${dir}/.env"
+  [[ -f "$env_file" ]] || return 1
+  grep -qE '^(OMNI_LINE_VERSION|JWT_SECRET|POSTGRES_PASSWORD)=' "$env_file" 2>/dev/null
+}
+
+env_get() {
+  local file="$1"
+  local key="$2"
+  grep -E "^${key}=" "$file" 2>/dev/null | head -n1 | cut -d= -f2- || true
+}
+
+print_upgrade_advice() {
+  local dir="$1"
+  local current="${2:-}"
+  warn "Omni Line is already installed in ${dir}${current:+ (version ${current})}."
+  info "Do not reinstall — upgrade this instance instead (compose + images; .env and volumes kept)."
+  info "Upgrade with this installer:"
+  info "  curl -fsSL ${INSTALL_SCRIPT_URL} | bash -s -- --dir ${dir} --version x.y.z"
+  info "Or manually:"
+  info "  cd ${dir} && set OMNI_LINE_VERSION=x.y.z in .env"
+  info "  docker compose --env-file .env pull && docker compose --env-file .env up -d"
+  info "Destructive reinstall only: re-run with --reset-env (wipes DB/storage volumes)."
 }
 
 # --- main ---
@@ -354,9 +394,13 @@ fi
 
 next_step "Gathering install options"
 
-# Defaults
+# Defaults (PORT/URL may be overridden from an existing .env in upgrade mode)
 INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_DIR}"
 VERSION_ARG="${VERSION_ARG:-latest}"
+PORT_FROM_CLI=0
+URL_FROM_CLI=0
+[[ -n "${PORT_ARG}" ]] && PORT_FROM_CLI=1
+[[ -n "${URL_ARG}" ]] && URL_FROM_CLI=1
 PORT_ARG="${PORT_ARG:-$DEFAULT_PORT}"
 PUBLIC_URL="${URL_ARG:-http://localhost:${PORT_ARG}}"
 ADMIN_EMAIL="$DEFAULT_ADMIN_EMAIL"
@@ -368,10 +412,59 @@ SMTP_USER=""
 SMTP_PASS=""
 MAIL_FROM="Omni Line <no-reply@omni-line.local>"
 START_STACK=1
+UPGRADE_MODE=0
+PREVIOUS_VERSION=""
 (( NO_START )) && START_STACK=0
 
+# Resolve install directory before other prompts so we can detect an existing instance.
 if (( ! YES )); then
   INSTALL_DIR="$(ask "Install directory" "$INSTALL_DIR")"
+fi
+
+if is_existing_install "$INSTALL_DIR"; then
+  PREVIOUS_VERSION="$(env_get "${INSTALL_DIR}/.env" "OMNI_LINE_VERSION")"
+  if (( RESET_ENV )); then
+    warn "Omni Line is already installed in ${INSTALL_DIR}${PREVIOUS_VERSION:+ (version ${PREVIOUS_VERSION})}."
+    warn "--reset-env regenerates secrets and wipes Compose volumes (destructive reinstall)."
+  else
+    print_upgrade_advice "$INSTALL_DIR" "$PREVIOUS_VERSION"
+    if (( YES )); then
+      info "Non-interactive mode: proceeding with upgrade (keeping existing .env)."
+      UPGRADE_MODE=1
+    else
+      if ask_yn "Upgrade this installation (recommended)?" "y"; then
+        UPGRADE_MODE=1
+      else
+        die "Aborted. Omni Line is already installed here — upgrade it (re-run with --version x.y.z) instead of reinstalling."
+      fi
+    fi
+  fi
+fi
+
+if (( UPGRADE_MODE )); then
+  # Prefer values already on disk unless the operator passed CLI overrides.
+  if (( ! PORT_FROM_CLI )); then
+    _p="$(env_get "${INSTALL_DIR}/.env" "OMNI_LINE_PORT")"
+    [[ -n "$_p" ]] && PORT_ARG="$_p"
+  fi
+  if (( ! URL_FROM_CLI )); then
+    _u="$(env_get "${INSTALL_DIR}/.env" "FRONTEND_URL")"
+    [[ -z "$_u" ]] && _u="$(env_get "${INSTALL_DIR}/.env" "SERVER_URL")"
+    [[ -n "$_u" ]] && PUBLIC_URL="$_u"
+  else
+    PUBLIC_URL="$URL_ARG"
+  fi
+  if (( ! YES )); then
+    VERSION_ARG="$(ask "Version to upgrade to (semver or latest)" "$VERSION_ARG")"
+    if (( ! NO_START )); then
+      if ask_yn "Pull images and restart the stack now?" "y"; then
+        START_STACK=1
+      else
+        START_STACK=0
+      fi
+    fi
+  fi
+elif (( ! YES )); then
   VERSION_ARG="$(ask "Version to install (semver or latest)" "$VERSION_ARG")"
   PORT_ARG="$(ask "Host port" "$PORT_ARG")"
   PUBLIC_URL="$(ask "Public URL (browser / CORS / clients)" "${URL_ARG:-http://localhost:${PORT_ARG}}")"
@@ -422,7 +515,7 @@ if [[ "$VERSION_ARG" == "latest" ]]; then
 fi
 ok "version ${VERSION_ARG}"
 
-check_disk_and_port "$INSTALL_DIR" "$PORT_ARG"
+check_disk_and_port "$INSTALL_DIR" "$PORT_ARG" "$UPGRADE_MODE"
 
 next_step "Preparing install directory"
 mkdir -p "$INSTALL_DIR"
@@ -660,7 +753,11 @@ if [[ -f "$ENV_PATH" ]]; then
 fi
 
 printf '\n%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "${C_GREEN}" "${C_RESET}"
-printf '%s✔ Omni Line is installed%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
+if (( UPGRADE_MODE )); then
+  printf '%s✔ Omni Line was upgraded%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
+else
+  printf '%s✔ Omni Line is installed%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
+fi
 printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n\n' "${C_GREEN}" "${C_RESET}"
 
 printf '%sYour instance%s\n' "${C_BOLD}" "${C_RESET}"
@@ -668,21 +765,34 @@ printf '  UI:           %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
 printf '  Admin email:  %s\n' "${ADMIN_EMAIL}"
 printf '  Admin pass:   %s\n' "${ADMIN_PASSWORD}"
 printf '  Install dir:  %s\n' "${INSTALL_DIR}"
-printf '  Version:      %s\n' "${VERSION_ARG}"
+if (( UPGRADE_MODE )) && [[ -n "$PREVIOUS_VERSION" && "$PREVIOUS_VERSION" != "$VERSION_ARG" ]]; then
+  printf '  Version:      %s → %s\n' "${PREVIOUS_VERSION}" "${VERSION_ARG}"
+else
+  printf '  Version:      %s\n' "${VERSION_ARG}"
+fi
 printf '\n'
 
-printf '%sNext steps%s\n' "${C_BOLD}" "${C_RESET}"
-printf '  1. Get your license key from the Omni Line portal:\n'
-printf '       %s\n' "${PORTAL_LICENSES_URL}"
-printf '     Sign in (or create an account), open Licenses, and copy the OMNI-… key.\n'
-printf '     Most of the product stays locked until this key is activated.\n'
-printf '  2. Open your instance UI and sign in with the admin credentials above:\n'
-printf '       %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
-printf '  3. Activate the key (Settings → License, or the license gate).\n'
-printf '     If activation returns LICENSE_INVALID, use a portal-issued key for this\n'
-printf '     deployment — do not set LICENSE_PUBLIC_KEY.\n'
-printf '  4. Create your organization, then registries / PATs as needed.\n'
-printf '\n'
+if (( UPGRADE_MODE )); then
+  printf '%sNext steps%s\n' "${C_BOLD}" "${C_RESET}"
+  printf '  1. Confirm health: curl -fsS http://127.0.0.1:%s/readyz\n' "${PORT_ARG}"
+  printf '  2. Open the UI and verify login still works:\n'
+  printf '       %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
+  printf '  3. Read the release notes for migrations / breaking changes.\n'
+  printf '\n'
+else
+  printf '%sNext steps%s\n' "${C_BOLD}" "${C_RESET}"
+  printf '  1. Get your license key from the Omni Line portal:\n'
+  printf '       %s\n' "${PORTAL_LICENSES_URL}"
+  printf '     Sign in (or create an account), open Licenses, and copy the OMNI-… key.\n'
+  printf '     Most of the product stays locked until this key is activated.\n'
+  printf '  2. Open your instance UI and sign in with the admin credentials above:\n'
+  printf '       %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
+  printf '  3. Activate the key (Settings → License, or the license gate).\n'
+  printf '     If activation returns LICENSE_INVALID, use a portal-issued key for this\n'
+  printf '     deployment — do not set LICENSE_PUBLIC_KEY.\n'
+  printf '  4. Create your organization, then registries / PATs as needed.\n'
+  printf '\n'
+fi
 
 printf '%sAdjust if needed%s (edit %s/.env then: docker compose up -d)\n' "${C_BOLD}" "${C_RESET}" "${INSTALL_DIR}"
 printf '  • Public URL / TLS behind a reverse proxy → SERVER_URL, FRONTEND_URL\n'
@@ -693,7 +803,7 @@ printf '  • Rotate secrets → JWT_SECRET, POSTGRES_PASSWORD (DB password need
 printf '  • Production storage → STORAGE_DRIVER=s3 and S3_* (see docs)\n'
 printf '  • External Postgres → set DATABASE_URL pattern via compose overlay (see docs)\n'
 printf '  • SSO / OIDC → configure in Settings or env (see docs/auth/SSO.md)\n'
-printf '  • Upgrade → re-run this installer with --version x.y.z\n'
+printf '  • Upgrade → re-run this installer with --dir %s --version x.y.z (do not reinstall)\n' "${INSTALL_DIR}"
 printf '  • Logs / health → cd %s && docker compose logs -f ; curl -fsS http://127.0.0.1:%s/readyz\n' "${INSTALL_DIR}" "${PORT_ARG}"
 printf '\n'
 printf '%sPortal:%s %s\n' "${C_DIM}" "${C_RESET}" "${PORTAL_URL}"
