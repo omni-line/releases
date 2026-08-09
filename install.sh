@@ -6,7 +6,7 @@
 #   ./install.sh --dir ./omni-line --yes
 set -euo pipefail
 
-OMNI_INSTALL_VERSION="1.1.0"
+OMNI_INSTALL_VERSION="1.1.1"
 # Always fetch this script from main; --version only pins GHCR image / compose release assets.
 INSTALL_SCRIPT_URL="${OMNI_LINE_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/omni-line/releases/main/install.sh}"
 RELEASE_BASE="${OMNI_LINE_RELEASE_BASE:-https://github.com/omni-line/releases/releases}"
@@ -119,8 +119,9 @@ ${C_BOLD}Existing installs:${C_RESET}
   If <dir> already has an Omni Line .env, this script upgrades that instance
   (compose + images; keeps secrets and volumes). It does not reinstall.
   Destructive wipe: --reset-env. Manual upgrade without this script:
-    cd <dir> && edit OMNI_LINE_VERSION in .env
+    cd <dir> && edit OMNI_LINE_VERSION / OMNI_LINE_*_IMAGE in .env
     docker compose --env-file .env pull && docker compose --env-file .env up -d
+  Do not rsync a checkout over an existing install (risks overwriting .env).
 
 ${C_BOLD}Docs:${C_RESET} ${DOCS_URL}
 EOF
@@ -778,6 +779,9 @@ if (( UPGRADE_MODE )); then
   printf '  2. Open the UI and verify login still works:\n'
   printf '       %s\n' "${PUBLIC_URL:-http://localhost:${PORT_ARG}}"
   printf '  3. Read the release notes for migrations / breaking changes.\n'
+  printf '  4. If an external reverse proxy shares a Docker network with Omni Line,\n'
+  printf '     recreate or reload it so upstream DNS picks up the new client IP\n'
+  printf '     (or use resolver 127.0.0.11 / overlays/external-network.yml — see docs).\n'
   printf '\n'
 else
   printf '%sNext steps%s\n' "${C_BOLD}" "${C_RESET}"
@@ -796,6 +800,8 @@ fi
 
 printf '%sAdjust if needed%s (edit %s/.env then: docker compose up -d)\n' "${C_BOLD}" "${C_RESET}" "${INSTALL_DIR}"
 printf '  • Public URL / TLS behind a reverse proxy → SERVER_URL, FRONTEND_URL\n'
+printf '  • Shared Docker network with your edge proxy → overlays/external-network.yml\n'
+printf '    (OMNI_LINE_PORT is host-only; proxy peers use client:8080 / alias omni-line)\n'
 if (( ! CONFIGURE_SMTP )); then
   printf '  • %sSMTP%s for invites / password reset → SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM\n' "${C_YELLOW}" "${C_RESET}"
 fi
