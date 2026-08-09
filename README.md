@@ -19,6 +19,8 @@ curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/install.sh 
 
 Fresh Ubuntu/Debian hosts need Docker Engine 25+ with Compose V2 before the installer will pass preflight: https://docs.docker.com/engine/install/ubuntu/
 
+If the install directory already has an Omni Line `.env`, the installer **detects it and upgrades** (compose + images; secrets and volumes kept). It will not silently reinstall. Pass `--version x.y.z` to pin the target release. Use `--reset-env` only for a destructive wipe.
+
 On a fresh cloud VM, prefer the cloud bootstrap (installs Docker, then `install.sh`):
 
 ```bash

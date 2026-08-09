@@ -10,4 +10,8 @@ On each publish, the monorepo **Publish images** workflow:
 
 Required on the monorepo: secret `RELEASES_REPO_TOKEN` with write access to this repository.
 
+## Changelog (mandatory)
+
+Every Release on this repo **must** have human-written changelog entries (highlights, breaking/operators, what's changed, upgrade). Auto-generated notes from this repo’s commits are not enough — after publish, replace empty or stub bodies with the monorepo changelog (see monorepo [`docs/ops/RELEASING.md`](https://github.com/omni-line/monorepo/blob/main/docs/ops/RELEASING.md#changelog-mandatory)).
+
 Do not hand-edit release assets on a tag without also updating the monorepo `deploy/` tree for the next cut.
