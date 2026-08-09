@@ -88,7 +88,7 @@ Open `http://localhost:8080`, sign in with the bootstrap admin, and activate you
 
 - Health: `curl -fsS http://127.0.0.1:8080/readyz`
 - Logs: `docker compose logs -f`
-- Upgrade: re-run the installer with `--version X.Y.Z`, or bump `OMNI_LINE_VERSION` and `docker compose pull && up -d`
+- Upgrade: re-run the installer with `--dir <path> --version X.Y.Z` (keeps `.env`, patches digests). Do not rsync over a live install. If a Dockerized reverse proxy shares a network with Omni Line, recreate/reload it after upgrade (stale upstream IP → 502)
 
 ## Maintainer note
 
