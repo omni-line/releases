@@ -2,6 +2,9 @@
 # Docs: https://github.com/omni-line/releases
 #
 # Pin a release with OMNI_LINE_VERSION (never use floating tags in production).
+# Prefer digest-pinned image refs from image-digests.env when available:
+#   OMNI_LINE_SERVER_IMAGE=ghcr.io/omni-line/omni-line-server@sha256:…
+#   OMNI_LINE_CLIENT_IMAGE=ghcr.io/omni-line/omni-line-client@sha256:…
 # Project name comes from COMPOSE_PROJECT_NAME in .env (set by install.sh) or the
 # directory name — do not hardcode, or installs in different dirs share one DB volume.
 
@@ -23,7 +26,7 @@ services:
     # Not published to the host by default (production-safe).
 
   server:
-    image: ghcr.io/omni-line/omni-line-server:${OMNI_LINE_VERSION:?OMNI_LINE_VERSION is required}
+    image: ${OMNI_LINE_SERVER_IMAGE:?OMNI_LINE_SERVER_IMAGE is required}
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-omniline}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-omniline}
@@ -45,8 +48,9 @@ services:
       RUN_MIGRATIONS_ON_START: ${RUN_MIGRATIONS_ON_START:-true}
       RUN_BOOTSTRAP_ON_START: ${RUN_BOOTSTRAP_ON_START:-true}
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-admin@omni-line.local}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-changeme123}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD is required}
       BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Admin}
+      BOOTSTRAP_CREATE_ORG: ${BOOTSTRAP_CREATE_ORG:-false}
       BOOTSTRAP_ORG_NAME: ${BOOTSTRAP_ORG_NAME:-Default Organization}
       BOOTSTRAP_ORG_SLUG: ${BOOTSTRAP_ORG_SLUG:-default}
       SMTP_HOST: ${SMTP_HOST:-}
@@ -76,7 +80,7 @@ services:
       start_period: 40s
 
   client:
-    image: ghcr.io/omni-line/omni-line-client:${OMNI_LINE_VERSION:?OMNI_LINE_VERSION is required}
+    image: ${OMNI_LINE_CLIENT_IMAGE:?OMNI_LINE_CLIENT_IMAGE is required}
     restart: unless-stopped
     environment:
       OMNI_LINE_API_URL: /api
