@@ -32,6 +32,14 @@ curl -fsSL https://raw.githubusercontent.com/omni-line/releases/main/cloud/cloud
 
 Optional env: `OMNI_URL`, `OMNI_PORT` (default `8080`), `OMNI_VERSION`, `OMNI_DIR`, `OMNI_FORCE=1`.
 
+### Vendor-managed Cloud Dedicated
+
+When `OMNI_CLOUD_MANAGED=1` and `OMNI_URL=https://{slug}.cloud.omniline.app`, [`cloud-init.sh`](cloud-init.sh) also runs [`managed-overlay.sh`](managed-overlay.sh):
+
+- Sets `OMNI_CLOUD_MANAGED=true` and seeds `SEED_LICENSE_KEY`
+- Starts Caddy on **80/443** → localhost `8080` (do not publish 8080 publicly)
+- Team/Enterprise: attach a block volume mounted as `STORAGE_PATH` (provisioner responsibility)
+
 ## AWS
 
 [Launch Stack](https://console.aws.amazon.com/cloudformation/home#/stacks/CreateStack?stackName=omni-line&templateURL=https://raw.githubusercontent.com/omni-line/releases/main/cloud/aws/cloudformation.yml) (opens the AWS console; sign in, pick a region, set `KeyName` and optionally tighten `AllowedCidr`).

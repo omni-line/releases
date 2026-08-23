@@ -135,6 +135,24 @@ fi
 info "Running install.sh ${INSTALL_ARGS[*]}"
 curl -fsSL "${INSTALL_SCRIPT_URL}" | bash -s -- "${INSTALL_ARGS[@]}"
 
+# --- vendor-managed Cloud (TLS edge + seeded license) ---
+if [[ "${OMNI_CLOUD_MANAGED:-0}" == "1" ]]; then
+  if [[ -z "${OMNI_URL:-}" || "${OMNI_URL}" != https://* ]]; then
+    die "OMNI_CLOUD_MANAGED requires OMNI_URL=https://..."
+  fi
+  MANAGED_OVERLAY_URL="${OMNI_MANAGED_OVERLAY_URL:-https://raw.githubusercontent.com/omni-line/releases/main/cloud/managed-overlay.sh}"
+  if [[ -f "$(dirname "$0")/managed-overlay.sh" ]]; then
+    # Running from a checkout (local/dev).
+    bash "$(dirname "$0")/managed-overlay.sh"
+  else
+    curl -fsSL "${MANAGED_OVERLAY_URL}" | OMNI_DIR="${OMNI_DIR}" OMNI_URL="${OMNI_URL}" OMNI_PORT="${OMNI_PORT}" \
+      SEED_LICENSE_KEY="${SEED_LICENSE_KEY:-}" \
+      BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-}" \
+      BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD:-}" \
+      bash
+  fi
+fi
+
 # --- MOTD for SSH sessions ---
 write_motd() {
   local dir="/etc/update-motd.d"
