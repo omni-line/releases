@@ -2,7 +2,9 @@
 # Omni Line DigitalOcean droplet user-data.
 # Paste into the Droplet create UI (User data) or pass to doctl --user-data-file.
 #
-# Recommended: Ubuntu 24.04, 4 GB RAM / 2 vCPU, open firewall for 22 + 8080.
+# Recommended: Ubuntu 24.04, 4 GB RAM / 2 vCPU.
+# Self-host firewall: 22 + 8080.
+# Managed Cloud (OMNI_CLOUD_MANAGED=1): 22 from ops CIDRs only; 80/443 public (8080 stays on localhost).
 #
 # Optional: set OMNI_URL / OMNI_VERSION / OMNI_PORT via write_files env before runcmd,
 # or edit the runcmd exports below.
