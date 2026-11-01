@@ -137,7 +137,7 @@ value is returned once; put it in the final report and nowhere else.
 ```bash
 curl -fsS -X POST "$BASE/api/pats" \
   -H "Authorization: Bearer $ACCESS_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"bootstrap","scopes":["registry:read","registry:write"],"expiresAt":null}'
+  -d '{"name":"bootstrap","project":"bootstrap","environment":"development","scopes":["registry:read","registry:write"],"expiresAt":null}'
 # {"data":{"id":"...","name":"bootstrap","token":"omni_...","scopes":[...],...}}
 ```
 
