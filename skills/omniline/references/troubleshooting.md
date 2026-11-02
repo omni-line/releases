@@ -14,6 +14,9 @@ docker compose --env-file .env logs --tail=50 postgres client
 grep -E '^(OMNI_LINE_VERSION|OMNI_LINE_PORT|SERVER_URL|FRONTEND_URL|STORAGE_DRIVER|RUN_MIGRATIONS_ON_START)=' .env
 ```
 
+Never print `JWT_SECRET`, `POSTGRES_PASSWORD`, `BOOTSTRAP_ADMIN_PASSWORD` or
+`SMTP_PASS` while collecting state.
+
 ## Preflight failures (installer `--check` or first run)
 
 | Symptom | Fix |
@@ -78,8 +81,65 @@ targets `omni-line:8080` (container port), not `OMNI_LINE_PORT`.
   a read-only member still cannot publish.
 - The registry URL in the client config must use the org slug from
   `GET /api/organizations`, not a guess.
+- Composer keeps one credential per host. A token in the global `auth.json`
+  (`~/.composer/auth.json` or `$COMPOSER_HOME/auth.json`) belongs to whichever
+  project saved it last, and other projects on the same machine send it too. Keep
+  each project's token in its own `auth.json`, or in `COMPOSER_AUTH` in CI and on
+  deploy servers: both take precedence over the global file.
+- On a deploy server where each deploy gets a new release directory (zero-downtime
+  deploys on Laravel Forge, Envoyer, Deployer), an `auth.json` inside the release is
+  gone at the next deploy. Keep the credentials in a file outside the releases and
+  export `COMPOSER_AUTH` in the deploy script.
 - Per-ecosystem client setup is at `https://omniline.app/docs/registries/<kind>.md`
   (npm, composer, docker, pypi, go, cargo, maven, ruby, conan, multipurpose).
+
+## Packages don't show up as cached or in use
+
+The client isn't downloading through Omni Line. Token usage only records what goes
+through the registry.
+
+- **Composer, existing project:** `composer install` downloads from the dist URLs in
+  `composer.lock`, usually GitHub, whatever `repositories` says, and never calls
+  Omni Line. Migrate the lock file ("Move an existing project" in
+  `https://omniline.app/docs/registries/composer.md`); `composer update --lock`
+  doesn't rewrite the URLs. `composer install -vvv` shows where each package comes
+  from.
+- **npm:** `package-lock.json` URLs on `registry.npmjs.org` are redirected to the
+  configured registry automatically. Locks resolved from another host need
+  `replace-registry-host=always` in `.npmrc`.
+
+## Emails don't arrive
+
+1. `grep -E '^(SMTP_HOST|SMTP_PORT|SMTP_SECURE|SMTP_USER|MAIL_FROM)=' .env`. Without
+   `SMTP_HOST`, the server sends to `localhost`, where nothing listens. Port 465
+   needs `SMTP_SECURE=true`.
+2. Run the connection check under "Configure email" in the install reference.
+3. `docker compose --env-file .env logs server | grep 'email.send permanently failed'`.
+   The error appears about 15 minutes after the send, once the retries run out.
+4. The check passes but the email never arrives: `MAIL_FROM` is probably not on a
+   domain verified with the provider. Check the provider's logs.
+
+Invitations only reach people by email, and so does password reset; there's no link
+to copy from the UI.
+
+## Vulnerability scans fail
+
+The registry's Vulnerabilities tab lists the scan as failed; the server log has the
+cause.
+
+| Log message | Fix |
+| --- | --- |
+| `OSV querybatch failed` or a fetch error to `api.osv.dev` | Open outbound HTTPS to `api.osv.dev`. |
+| `Packagist security advisories failed` or a fetch error to `packagist.org` | Composer registries check Packagist's advisories since 1.0.6, hosted ones included. Open outbound HTTPS to `packagist.org`. |
+
+A failed scan keeps the previous results; it doesn't mark findings fixed.
+
+## Creating registries
+
+`Registry slug already in use` can come from another organization: registry slugs
+are unique across the instance, not per organization, even though registry URLs
+include the organization. Pick another slug, such as `packagist` instead of
+`composer`. Tracked in https://github.com/omni-line/monorepo/issues/99.
 
 ## Reporting a failure
 

@@ -31,6 +31,11 @@ curl -fsS "https://api.github.com/repos/omni-line/releases/releases/tags/v<targe
 Summarize anything that affects this host before proceeding. If a note requires a
 manual step, do it or ask, do not skip it.
 
+New outbound hosts appear under "Breaking / operators" (1.0.6 added `packagist.org`
+for Composer registries). On a host with an egress firewall, check them with the
+loop in the install reference's preflight before upgrading. The upgrade itself
+succeeds without them, but the scans that need them start failing.
+
 ## 3. Back up
 
 Backups are cheap and rollback without them is not possible. Always do this before

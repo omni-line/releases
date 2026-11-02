@@ -20,9 +20,23 @@ What the installer requires:
 | RAM | 4 GiB recommended. Installer warns below ~1.8 GiB; 2 GiB works with swap |
 | Disk | 5 GiB minimum, 20+ GiB recommended. Artifacts grow without bound |
 | Port | Default 8080 must be free on the host (`--port` to change) |
+| Outbound HTTPS | `github.com`, `raw.githubusercontent.com` and `ghcr.io` (install and upgrades); the upstream of each proxy registry (`registry.npmjs.org`, `repo.packagist.org`, …); `api.osv.dev` (vulnerability scans); `packagist.org` (Composer advisories, 1.0.6 and later); the SMTP server, if mail is configured |
 
 If RAM is low, suggest a swap file before continuing rather than passing `--force`.
 If Docker is missing, install it (or tell the user how) and rerun `--check`.
+
+`--check` doesn't test outbound access. On a host with an egress firewall, check it
+yourself, adding the upstreams of the registries the user plans to create:
+
+```bash
+for host in ghcr.io api.osv.dev packagist.org repo.packagist.org registry.npmjs.org; do
+  code="$(curl -s -o /dev/null -m 10 -w '%{http_code}' "https://$host/")"
+  [ "$code" = "000" ] && echo "$host unreachable" || echo "$host ok ($code)"
+done
+```
+
+Any HTTP status means the host is reachable; `000` means it isn't. The stack still
+installs without `api.osv.dev` or `packagist.org`, but vulnerability scans fail.
 
 ## 2. Gather the two inputs
 
@@ -141,6 +155,13 @@ curl -fsS -X POST "$BASE/api/pats" \
 # {"data":{"id":"...","name":"bootstrap","token":"omni_...","scopes":[...],...}}
 ```
 
+This token is for trying things out. Everything that only installs packages (a
+laptop, CI, a deploy server) should get its own read-only token, with
+`"scopes":["registry:read"]` and that project and environment (`development`,
+`ci`, `staging` or `production`). Then one can be revoked without breaking the
+others, and vulnerability counts tell the environments apart. Say so in the
+hand-off.
+
 ## 7. Hand-off
 
 Tell the user what is left that only they can do:
@@ -148,11 +169,62 @@ Tell the user what is left that only they can do:
 - Open the host firewall for the chosen port, or put the instance behind TLS
   (see overlays reference, `tls-edge`).
 - Point DNS at the host if they gave a hostname.
-- Configure SMTP in `.env` (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
-  `MAIL_FROM`) if they want invites and password reset, then
-  `docker compose --env-file .env up -d`.
+- Configure email if they want invitations, password reset or scan reports
+  ([Configure email](#configure-email-smtp) below). Without it, invitations don't
+  reach anyone: the invite link is only sent by email.
 - Create their first registry in the UI (Registries) or via the API, then follow the
   ecosystem how-to at `https://omniline.app/docs/registries/<kind>.md`.
+- For an existing Composer project, the lock file has to be migrated, or
+  `composer install` keeps downloading from GitHub and bypasses Omni Line. The
+  Composer how-to covers it ("Move an existing project"), along with tokens for CI
+  and deploy servers.
+
+## Configure email (SMTP)
+
+Without SMTP nothing that sends email works, and nothing says so: invitations,
+password reset and scan reports. The server falls back to `localhost`, where
+nothing listens. Each message is retried five times over about 15 minutes, then
+moves to the `email.send.dlq` queue with an error in the server log.
+
+The user supplies the SMTP provider's host, port, user and password. Add or
+replace these keys in `<dir>/.env` without rewriting the rest of the file (rule 2),
+and don't print `SMTP_PASS`:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587        # 465 for implicit TLS
+SMTP_SECURE=false    # true with port 465
+SMTP_USER=...
+SMTP_PASS=...
+MAIL_FROM=Omni Line <no-reply@mail.example.com>
+```
+
+- `MAIL_FROM` must use a domain verified with the provider (SPF and DKIM). The
+  default `no-reply@omni-line.local` is rejected or lands in spam, and a domain
+  with a DMARC `p=reject` policy rejects any unverified sender.
+- With port 465, `SMTP_SECURE` must be `true`. The installer's SMTP prompt sets it
+  from the port since installer 1.1.2 (`install.sh --help` prints the version).
+  Older installers always wrote `false`, so check it on existing installs.
+
+Recreate the server, then check the connection and login without sending a
+message:
+
+```bash
+cd "$DIR" && docker compose --env-file .env up -d server
+docker compose --env-file .env exec -T -w /app server node --input-type=module -e '
+import nodemailer from "nodemailer";
+const t = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true",
+  auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+});
+await t.verify();
+console.log("SMTP OK");'
+```
+
+`SMTP OK` means the server reached the provider and logged in. To confirm
+delivery, ask the user to request a password reset for their own account.
 
 ## Manual Compose install
 

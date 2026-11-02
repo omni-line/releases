@@ -6,7 +6,7 @@
 #   ./install.sh --dir ./omni-line --yes
 set -euo pipefail
 
-OMNI_INSTALL_VERSION="1.1.1"
+OMNI_INSTALL_VERSION="1.1.2"
 # Always fetch this script from main; --version only pins GHCR image / compose release assets.
 INSTALL_SCRIPT_URL="${OMNI_LINE_INSTALL_SCRIPT_URL:-https://raw.githubusercontent.com/omni-line/releases/main/install.sh}"
 RELEASE_BASE="${OMNI_LINE_RELEASE_BASE:-https://github.com/omni-line/releases/releases}"
@@ -661,7 +661,12 @@ EOF
     {
       echo "SMTP_HOST=${SMTP_HOST}"
       echo "SMTP_PORT=${SMTP_PORT}"
-      echo "SMTP_SECURE=false"
+      # 465 is TLS from the first byte; other ports start plain and upgrade with STARTTLS.
+      if [[ "$SMTP_PORT" == "465" ]]; then
+        echo "SMTP_SECURE=true"
+      else
+        echo "SMTP_SECURE=false"
+      fi
       [[ -n "$SMTP_USER" ]] && echo "SMTP_USER=${SMTP_USER}"
       [[ -n "$SMTP_PASS" ]] && echo "SMTP_PASS=${SMTP_PASS}"
     } >>"$ENV_PATH"
@@ -803,7 +808,7 @@ printf '  • Public URL / TLS behind a reverse proxy → SERVER_URL, FRONTEND_U
 printf '  • Shared Docker network with your edge proxy → overlays/external-network.yml\n'
 printf '    (OMNI_LINE_PORT is host-only; proxy peers use client:8080 / alias omni-line)\n'
 if (( ! CONFIGURE_SMTP )); then
-  printf '  • %sSMTP%s for invites / password reset → SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM\n' "${C_YELLOW}" "${C_RESET}"
+  printf '  • %sSMTP%s for invites / password reset → SMTP_HOST, SMTP_PORT, SMTP_SECURE (true for 465), SMTP_USER, SMTP_PASS, MAIL_FROM\n' "${C_YELLOW}" "${C_RESET}"
 fi
 printf '  • Rotate secrets → JWT_SECRET, POSTGRES_PASSWORD (DB password needs care with existing volume)\n'
 printf '  • Production storage → STORAGE_DRIVER=s3 and S3_* (see docs)\n'

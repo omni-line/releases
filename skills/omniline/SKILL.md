@@ -93,8 +93,8 @@ curl -fsS "http://127.0.0.1:${PORT}/api/license" \
 Final report, in this order: state before (fresh / version), state after (version),
 UI URL, admin email and password (fresh installs only), install dir, license status,
 PAT created (name and scopes, token shown once), and anything the user still has to
-do by hand (open a firewall port, point DNS, set up TLS). If a step failed, say which
-one and what the last command printed.
+do by hand (open a firewall port, point DNS, set up TLS, configure SMTP). If a step
+failed, say which one and what the last command printed.
 
 ## Other install paths
 
@@ -108,7 +108,7 @@ matching docs page and follow it instead:
 
 ## References
 
-- [references/install.md](references/install.md): fresh install, flags, preflight, license activation, first PAT.
+- [references/install.md](references/install.md): fresh install, flags, preflight (including outbound access), license activation, first PAT, email (SMTP).
 - [references/update.md](references/update.md): backup, release notes, upgrade, post-upgrade checks, rollback.
 - [references/overlays.md](references/overlays.md): external Postgres, S3 storage, TLS edge, shared Docker network.
-- [references/troubleshooting.md](references/troubleshooting.md): readyz timeouts, LICENSE_INVALID, CORS and public URL, port and RAM checks.
+- [references/troubleshooting.md](references/troubleshooting.md): readyz timeouts, LICENSE_INVALID, CORS and public URL, port and RAM checks, package client auth, packages bypassing Omni Line, email delivery, failed scans, registry slugs.
